@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to Text & Q&A</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background-color: #222;
+            color: white;
+        }
+        #image-preview {
+            max-width: 50%;
+            height: auto;
+            margin-top: 20px;
+            display: none;
+            border: 2px solid white;
+            padding: 10px;
+            border-radius: 10px;
+            display: block;
+            margin: auto;
+        }
+        #description, #answer {
+            margin-top: 20px;
+            font-size: 18px;
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            display: inline-block;
+            max-width: 80%;
+            text-align: left;
+        }
+        input, button {
+            margin: 10px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        #error-message {
+            color: red;
+            margin-top: 10px;
+        }
+        #video {
+            width: 50%;
+            border: 2px solid white;
+            border-radius: 10px;
+            display: none;
+            margin: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image to Text & Q&A</h1>
+    
+    <input type="file" id="file-input">
+    <button onclick="uploadImage()">Upload</button>
+
+    <h3>OR</h3>
+
+    <button onclick="startCamera()">Open Camera</button>
+    <button onclick="captureImage()">Capture</button>
+    <br>
+    
+    <video id="video" autoplay></video>
+    <canvas id="canvas" style="display: none;"></canvas>
+    
+    <img id="image-preview">
+    <p id="error-message"></p>
+
+    <div id="description-section" style="display: none;">
+        <h3>Description:</h3>
+        <p id="description"></p>
+    </div>
+
+    <div id="qa-section" style="display: none;">
+        <input type="text" id="question-input" placeholder="Ask a question about the image...">
+        <button onclick="askQuestion()">Ask</button>
+        <p id="answer"></p>
+    </div>
+
+    <script>
+        let videoStream = null;
+
+        function startCamera() {
+            const video = document.getElementById("video");
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.style.display = "block";
+                    videoStream = stream;
+                })
+                .catch(err => {
+                    console.error("Error accessing camera:", err);
+                });
+        }
+
+        function captureImage() {
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("canvas");
+            const imagePreview = document.getElementById("image-preview");
+
+            if (!videoStream) {
+                alert("Camera is not active. Click 'Open Camera' first.");
+                return;
+            }
+
+            // Capture image from video stream
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Convert to Blob and upload
+            canvas.toBlob(blob => {
+                const file = new File([blob], "captured_image.jpg", { type: "image/jpeg" });
+                uploadImage(file);
+            }, "image/jpeg");
+
+            // Stop the camera
+            videoStream.getTracks().forEach(track => track.stop());
+            video.style.display = "none";
+        }
+
+        function uploadImage(file = null) {
+            const fileInput = document.getElementById('file-input');
+            const errorMessage = document.getElementById("error-message");
+            const imagePreview = document.getElementById("image-preview");
+            const descriptionSection = document.getElementById("description-section");
+            const descriptionText = document.getElementById("description");
+            const qaSection = document.getElementById("qa-section");
+
+            if (!file) {
+                file = fileInput.files[0];
+            }
+
+            if (!file) {
+                errorMessage.innerText = "Please select an image first.";
+                return;
+            }
+
+            errorMessage.innerText = "";
+            descriptionText.innerHTML = "Generating description... Please wait.";
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            fetch("/upload", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    errorMessage.innerText = data.error;
+                } else {
+                    errorMessage.innerText = "";
+                    imagePreview.src = URL.createObjectURL(file);
+                    imagePreview.style.display = "block";
+                    descriptionSection.style.display = "block";
+                    descriptionText.innerHTML = data.description;
+                    qaSection.style.display = "block";
+                }
+            })
+            .catch(error => {
+                errorMessage.innerText = "Error: Unable to process the request.";
+                console.error("Error:", error);
+            });
+        }
+
+        function askQuestion() {
+            const questionInput = document.getElementById("question-input");
+            const answerBox = document.getElementById("answer");
+
+            fetch("/ask", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question: questionInput.value.trim() })
+            })
+            .then(response => response.json())
+            .then(data => answerBox.innerText = data.answer)
+            .catch(console.error);
+        }
+    </script>
+</body>
+</html>
